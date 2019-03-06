@@ -1,0 +1,9 @@
+body {
+    background-color: #333;
+}
+
+.refresh-button {
+    display: block;
+    margin: 30px 0 0 20px;
+    font-size: 30px;
+}
