@@ -9,6 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'height',
         'frameQuality',
     ];
+    const paramsBoolean = [
+        'animate',
+    ];
     const params = {};
 
     searchParams.split('&').forEach((item) => {
@@ -17,6 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
             let value = decodeURIComponent(param[1]);
             if (paramsNumber.includes(param[0])) {
                 value = Number(value);
+            }
+            if (paramsBoolean.includes(param[0])) {
+                value = value === 'true';
             }
             params[param[0]] = value;
         }

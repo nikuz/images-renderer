@@ -1,6 +1,6 @@
 {
   "name": "@nikuz/images-renderer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "",
   "files": [
     "dst"
@@ -8,14 +8,20 @@
   "main": "dst/bundle.js",
   "scripts": {
     "start": "NODE_ENV=development webpack-dev-server",
+    "server": "node server.js & node puppeteer/server.js",
     "prebuild": "npm run eslint",
     "build": "NODE_ENV=production webpack",
-    "eslint": "eslint ./webpack.config.js ./server.js ./src -f table"
+    "eslint": "eslint ./webpack.config.js ./server.js ./puppeteer ./src -f table"
   },
   "author": "Nikolai Kuznetcov",
   "license": "ISC",
   "dependencies": {
-    "@nikuz/images-core": "github:nikuz/images-core"
+    "@nikuz/images-core": "github:nikuz/images-core",
+    "formidable": "1.2.1",
+    "gm": "1.23.1",
+    "puppeteer": "1.13.0",
+    "rimraf": "2.6.3",
+    "uniqid": "5.0.3"
   },
   "devDependencies": {
     "@babel/core": "7.2.2",
