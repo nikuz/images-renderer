@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "@nikuz/images-core": "github:nikuz/images-core",
+    "async": "2.6.2",
     "formidable": "1.2.1",
     "gm": "1.23.1",
     "puppeteer": "1.13.0",

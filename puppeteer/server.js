@@ -2,7 +2,9 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const async = require('async');
 const querystring = require('querystring');
+const { spawn } = require('child_process');
 const puppeteer = require('puppeteer');
 const uniqid = require('uniqid');
 const rimraf = require('rimraf');
@@ -31,14 +33,19 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
 
     const server = http.createServer((req, res) => {
         const requestId = uniqid();
+        const requestTime = Date.now();
         let bodyFields;
-        // let bodyFiles;
         let image;
+        let type;
         let filter;
         let watermark = false;
-        // let logo = false;
-        // let copyright = false;
+        let logo;
+        let logoAlign;
+        // let copyright;
+        // let copyrightAlign;
         let requestFolder;
+        let lastRenderedFrame;
+        let lastRenderedFrameFormat;
         const workflow = new EventEmitter();
 
         workflow.on('res500', (response) => {
@@ -49,8 +56,45 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
 
         workflow.on('res200', (response) => {
             rimraf.sync(requestFolder);
+            const result = response || '';
+
             res.statusCode = 200;
-            res.end(response || '');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Connection', 'close');
+            res.end(result);
+
+            console.log('Request time: ', (Date.now() - requestTime) / 1000); //eslint-disable-line
+        });
+
+        workflow.on('encodeResponse', () => {
+            const bitmap = fs.readFileSync(lastRenderedFrame);
+            const encodedResult = Buffer.from(bitmap).toString('base64');
+
+            workflow.emit('res200', `data:image/${lastRenderedFrameFormat};base64,${encodedResult}`);
+        });
+
+        workflow.on('createVideo', () => {
+            if (type === 'gif') {
+                const out = `${requestFolder}/out.gif`;
+                const ffmpeg = spawn('ffmpeg', [
+                    '-framerate',
+                    '40',
+                    '-i',
+                    `${requestFolder}/%03d.${lastRenderedFrameFormat}`,
+                    '-final_delay',
+                    '500',
+                    out,
+                ]);
+                ffmpeg.on('close', () => {
+                    lastRenderedFrame = out;
+                    lastRenderedFrameFormat = 'gif';
+                    workflow.emit('encodeResponse');
+                });
+            } if (type === 'mp4') {
+                // workflow.emit('encodeResponse');
+            } else {
+                workflow.emit('encodeResponse');
+            }
         });
 
         workflow.on('render', async () => {
@@ -68,9 +112,9 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                 const text = msg.text();
                 // console.log(text.substring(0, 100));
                 if (text === 'puppeteer: Finish') {
-                    console.log('Puppeteer total time: ', (Date.now() - startTime) / 1000); //eslint-disable-line
+                    console.log('Puppeteer time: ', (Date.now() - startTime) / 1000); //eslint-disable-line
                     await page.close();
-                    workflow.emit('res200');
+                    workflow.emit('createVideo');
                 } else if (text === 'puppeteer: Error') {
                     await page.close();
                     workflow.emit('res500', text);
@@ -84,7 +128,9 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         } else if (frame < 100) {
                             frameId = `0${frame}`;
                         }
-                        fs.writeFile(`${requestFolder}/${frameId}.${imageFormat[1]}`, base64Data, 'base64', (err) => {
+                        lastRenderedFrame = `${requestFolder}/${frameId}.${imageFormat[1]}`;
+                        lastRenderedFrameFormat = imageFormat[1];
+                        fs.writeFile(lastRenderedFrame, base64Data, 'base64', (err) => {
                             if (err) {
                                 console.log(err); //eslint-disable-line
                             }
@@ -104,6 +150,40 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
             }
         });
 
+        workflow.on('imageApplyLogo', () => {
+            async.parallel([
+                callback => (
+                    gm(image).size(callback)
+                ),
+                callback => (
+                    gm(logo.path).size(callback)
+                ),
+            ], (err, sizes) => {
+                if (err) {
+                    workflow.emit('res500', err.toString());
+                } else {
+                    const imageSize = sizes[0];
+                    const logoSize = sizes[1];
+                    let x = 10;
+                    if (logoAlign === 'center') {
+                        x = (imageSize.width / 2) - (logoSize.width / 2);
+                    } else if (logoAlign === 'right') {
+                        x = imageSize.width - logoSize.width - 10;
+                    }
+                    gm(image)
+                        .composite(logo.path)
+                        .geometry(`+${x}+${imageSize.height - logoSize.height - 10}`)
+                        .write(image, (composeErr) => {
+                            if (composeErr) {
+                                workflow.emit('res500', composeErr.toString());
+                            } else {
+                                workflow.emit('render');
+                            }
+                        });
+                }
+            });
+        });
+
         workflow.on('imageApplyWatermark', () => {
             gm(image)
                 .composite(watermarkFile)
@@ -112,6 +192,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                 .write(image, (composeErr) => {
                     if (composeErr) {
                         workflow.emit('res500', composeErr.toString());
+                    } else if (logo) {
+                        workflow.emit('imageApplyLogo');
                     } else {
                         workflow.emit('render');
                     }
@@ -124,6 +206,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                     workflow.emit('res500', err.toString());
                 } else if (watermark) {
                     workflow.emit('imageApplyWatermark');
+                } else if (logo) {
+                    workflow.emit('imageApplyLogo');
                 } else {
                     workflow.emit('render');
                 }
@@ -153,12 +237,11 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         .raise(100, 100)
                         .write(image, resultHandler);
                     break;
-                case 'shade': // need to implement
-                    // gm(image)
-                    //     .extent(100, 100, '+')
-                    //     .write(image, resultHandler);
-                    resultHandler();
-                    break;
+                // case 'shade': // need to implement
+                //     gm(image)
+                //         .extent(100, 100, '+')
+                //         .write(image, resultHandler);
+                //     break;
                 case 'blur':
                     gm(image)
                         .blur(10, 10)
@@ -202,6 +285,10 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
 
                     if (filter) {
                         workflow.emit('imageApplyFilter', filter);
+                    } else if (watermark) {
+                        workflow.emit('imageApplyWatermark');
+                    } else if (logo) {
+                        workflow.emit('imageApplyLogo');
                     } else {
                         workflow.emit('render');
                     }
@@ -214,23 +301,13 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
         });
 
         workflow.on('bodyParse', () => {
-            Object.keys(bodyFields).forEach((key) => {
-                const value = bodyFields[key];
-                switch (key) {
-                    case 'imageURL':
-                        image = value;
-                        break;
-                    case 'filter':
-                        filter = value;
-                        break;
-                    case 'watermark':
-                        if (value === 'true' || value === '1') {
-                            watermark = true;
-                        }
-                        break;
-                    default:
-                }
-            });
+            image = bodyFields.imageURL;
+            filter = bodyFields.filter;
+            logoAlign = bodyFields.logoAlign;
+            // copyrightAlign = bodyFields.copyrightAlign;
+            // copyright = bodyFields.copyright;
+            watermark = bodyFields.watermark === 'true';
+            type = bodyFields.type;
 
             if (image) {
                 workflow.emit('imageDownload', filter);
@@ -241,12 +318,12 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
 
         workflow.on('bodyGet', () => {
             const form = new formidable.IncomingForm();
-            form.parse(req, (err, fields) => {
+            form.parse(req, (err, fields, files) => {
                 if (err) {
                     workflow.emit('res500', err.toString());
                 }
+                logo = files.logo;
                 bodyFields = fields;
-                // bodyFiles = files;
                 workflow.emit('bodyParse', filter);
             });
         });
