@@ -36,13 +36,13 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
         const requestTime = Date.now();
         let bodyFields;
         let image;
-        let type;
+        let resultFormat;
         let filter;
         let watermark = false;
         let logo;
         let logoAlign;
-        // let copyright;
-        // let copyrightAlign;
+        let copyright;
+        let copyrightAlign;
         let requestFolder;
         let lastRenderedFrame;
         let lastRenderedFrameFormat;
@@ -69,31 +69,76 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
         workflow.on('encodeResponse', () => {
             const bitmap = fs.readFileSync(lastRenderedFrame);
             const encodedResult = Buffer.from(bitmap).toString('base64');
+            const format = resultFormat === 'mp4' ? 'video' : 'image';
 
-            workflow.emit('res200', `data:image/${lastRenderedFrameFormat};base64,${encodedResult}`);
+            workflow.emit(
+                'res200',
+                `data:${format}/${lastRenderedFrameFormat};base64,${encodedResult}`
+            );
         });
 
         workflow.on('createVideo', () => {
-            if (type === 'gif') {
-                const out = `${requestFolder}/out.gif`;
-                const ffmpeg = spawn('ffmpeg', [
-                    '-framerate',
-                    '40',
-                    '-i',
-                    `${requestFolder}/%03d.${lastRenderedFrameFormat}`,
-                    '-final_delay',
-                    '500',
-                    out,
-                ]);
-                ffmpeg.on('close', () => {
-                    lastRenderedFrame = out;
-                    lastRenderedFrameFormat = 'gif';
+            const input = `${requestFolder}/%03d.${lastRenderedFrameFormat}`;
+
+            switch (resultFormat) {
+                case 'gif': {
+                    let ffmpegError = '';
+                    const out = `${requestFolder}/out.gif`;
+                    const ffmpeg = spawn('ffmpeg', [
+                        '-framerate',
+                        '40',
+                        '-i',
+                        input,
+                        '-final_delay',
+                        '500',
+                        out,
+                    ]);
+
+                    ffmpeg.stderr.on('data', (err) => {
+                        ffmpegError += err;
+                    });
+
+                    ffmpeg.on('close', (code) => {
+                        if (code !== 0) {
+                            workflow.emit('res500', ffmpegError);
+                        } else {
+                            lastRenderedFrame = out;
+                            lastRenderedFrameFormat = 'gif';
+                            workflow.emit('encodeResponse');
+                        }
+                    });
+                    break;
+                }
+                case 'mp4': {
+                    let ffmpegError = '';
+                    const out = `${requestFolder}/out.mp4`;
+                    const ffmpeg = spawn('ffmpeg', [
+                        '-framerate',
+                        '24',
+                        '-i',
+                        input,
+                        '-final_delay',
+                        '500',
+                        out,
+                    ]);
+
+                    ffmpeg.stderr.on('data', (err) => {
+                        ffmpegError += err;
+                    });
+
+                    ffmpeg.on('close', (code) => {
+                        if (code !== 0) {
+                            workflow.emit('res500', ffmpegError);
+                        } else {
+                            lastRenderedFrame = out;
+                            lastRenderedFrameFormat = 'mp4';
+                            workflow.emit('encodeResponse');
+                        }
+                    });
+                    break;
+                }
+                default:
                     workflow.emit('encodeResponse');
-                });
-            } if (type === 'mp4') {
-                // workflow.emit('encodeResponse');
-            } else {
-                workflow.emit('encodeResponse');
             }
         });
 
@@ -130,12 +175,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         }
                         lastRenderedFrame = `${requestFolder}/${frameId}.${imageFormat[1]}`;
                         lastRenderedFrameFormat = imageFormat[1];
-                        fs.writeFile(lastRenderedFrame, base64Data, 'base64', (err) => {
-                            if (err) {
-                                console.log(err); //eslint-disable-line
-                            }
-                            frame++;
-                        });
+                        fs.writeFileSync(lastRenderedFrame, base64Data, 'base64');
+                        frame++;
                     }
                 }
             });
@@ -148,6 +189,26 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                 await page.close();
                 workflow.emit('res500', `render client responses with ${response.status()}`);
             }
+        });
+
+        workflow.on('imageApplyCopyright', () => {
+            let gravity = 'SouthWest';
+            if (copyrightAlign === 'center') {
+                gravity = 'South';
+            } else if (copyrightAlign === 'right') {
+                gravity = 'SouthEast';
+            }
+            gm(image)
+                .pointSize(50)
+                .fill('#FFF')
+                .drawText(20, 20, copyright, gravity)
+                .write(image, (composeErr) => {
+                    if (composeErr) {
+                        workflow.emit('res500', composeErr.toString());
+                    } else {
+                        workflow.emit('render');
+                    }
+                });
         });
 
         workflow.on('imageApplyLogo', () => {
@@ -176,6 +237,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         .write(image, (composeErr) => {
                             if (composeErr) {
                                 workflow.emit('res500', composeErr.toString());
+                            } else if (copyright) {
+                                workflow.emit('imageApplyCopyright');
                             } else {
                                 workflow.emit('render');
                             }
@@ -194,6 +257,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         workflow.emit('res500', composeErr.toString());
                     } else if (logo) {
                         workflow.emit('imageApplyLogo');
+                    } else if (copyright) {
+                        workflow.emit('imageApplyCopyright');
                     } else {
                         workflow.emit('render');
                     }
@@ -208,6 +273,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                     workflow.emit('imageApplyWatermark');
                 } else if (logo) {
                     workflow.emit('imageApplyLogo');
+                } else if (copyright) {
+                    workflow.emit('imageApplyCopyright');
                 } else {
                     workflow.emit('render');
                 }
@@ -289,6 +356,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         workflow.emit('imageApplyWatermark');
                     } else if (logo) {
                         workflow.emit('imageApplyLogo');
+                    } else if (copyright) {
+                        workflow.emit('imageApplyCopyright');
                     } else {
                         workflow.emit('render');
                     }
@@ -304,10 +373,10 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
             image = bodyFields.imageURL;
             filter = bodyFields.filter;
             logoAlign = bodyFields.logoAlign;
-            // copyrightAlign = bodyFields.copyrightAlign;
-            // copyright = bodyFields.copyright;
+            copyrightAlign = bodyFields.copyrightAlign;
+            copyright = bodyFields.copyright;
             watermark = bodyFields.watermark === 'true';
-            type = bodyFields.type;
+            resultFormat = bodyFields.format;
 
             if (image) {
                 workflow.emit('imageDownload', filter);
