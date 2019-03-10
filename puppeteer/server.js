@@ -35,6 +35,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
         const requestId = uniqid();
         const requestTime = Date.now();
         let bodyFields;
+        let bodyFiles;
         let image;
         let resultFormat;
         let filter;
@@ -330,6 +331,37 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
             }
         });
 
+        workflow.on('imageResize', () => {
+            const size = bodyFields.size;
+            const imageName = 'inputImage.jpg';
+            image = `${requestFolder}/${imageName}`;
+            gm(bodyFiles.image.path)
+                .resize(size, size, '^')
+                .gravity('Center')
+                .crop(size, size, 0, 0)
+                .noProfile()
+                .write(image, (err) => {
+                    if (err) {
+                        workflow.emit('res500', err.toString());
+                        return;
+                    }
+
+                    bodyFields.imageURL = `http://${hostname}:5678/${requestId}/${imageName}`;
+
+                    if (filter) {
+                        workflow.emit('imageApplyFilter');
+                    } else if (watermark) {
+                        workflow.emit('imageApplyWatermark');
+                    } else if (logo) {
+                        workflow.emit('imageApplyLogo');
+                    } else if (copyright) {
+                        workflow.emit('imageApplyCopyright');
+                    } else {
+                        workflow.emit('render');
+                    }
+                });
+        });
+
         workflow.on('imageDownload', () => {
             http.request(image, (imageDownloadRes) => {
                 const data = new Stream();
@@ -351,7 +383,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                     bodyFields.imageURL = `http://${hostname}:5678/${requestId}/${imageName}`;
 
                     if (filter) {
-                        workflow.emit('imageApplyFilter', filter);
+                        workflow.emit('imageApplyFilter');
                     } else if (watermark) {
                         workflow.emit('imageApplyWatermark');
                     } else if (logo) {
@@ -364,7 +396,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                 });
 
                 imageDownloadRes.on('error', (err) => {
-                    workflow.emit('res500', err);
+                    workflow.emit('res500', err.toString());
                 });
             }).end();
         });
@@ -379,7 +411,9 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
             resultFormat = bodyFields.format;
 
             if (image) {
-                workflow.emit('imageDownload', filter);
+                workflow.emit('imageDownload');
+            } else if (bodyFiles.image) {
+                workflow.emit('imageResize');
             } else {
                 workflow.emit('res500', 'No image param');
             }
@@ -393,6 +427,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                 }
                 logo = files.logo;
                 bodyFields = fields;
+                bodyFiles = files;
                 workflow.emit('bodyParse', filter);
             });
         });

@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => {
     if (req.url.indexOf('bundle.js') !== -1) {
         contentType = 'text/javascript';
         cont = fs.readFileSync('./dst/bundle.js');
-    } else if (/(jpe?g|png)$/.test(req.url)) {
+    } else if (/^\/[^?][^&]+(jpe?g|png)$/.test(req.url)) {
         const urlParts = url.parse(req.url);
         const imagePath = `./dst${urlParts.path}`;
         if (fs.existsSync(imagePath)) {
