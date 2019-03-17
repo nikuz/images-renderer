@@ -26,10 +26,16 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
 `);
 
 (async () => {
-    const browser = await puppeteer.launch({
-        args: ['--disable-web-security'],
-        // headless: false,
-    });
+    let browser;
+
+    const openBrowser = async () => {
+        browser = await puppeteer.launch({
+            args: ['--disable-web-security'],
+            // headless: false,
+        });
+    };
+
+    await openBrowser();
 
     const server = http.createServer((req, res) => {
         const requestId = uniqid();
@@ -145,7 +151,22 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
 
         workflow.on('render', async () => {
             const startTime = Date.now();
-            const page = await browser.newPage();
+            let page;
+            const openPage = async () => {
+                page = await browser.newPage();
+            };
+            try {
+                await openPage();
+            } catch (e) {
+                await browser.close();
+                await openBrowser();
+                try {
+                    await openPage();
+                } catch (openPageError) {
+                    workflow.emit('res500', openPageError.toString());
+                    return;
+                }
+            }
             await page.setViewport({
                 width: 600,
                 height: 600,
