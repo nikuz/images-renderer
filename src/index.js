@@ -27,29 +27,10 @@ document.addEventListener('DOMContentLoaded', () => {
             params[param[0]] = value;
         }
     });
-    console.log(params); // eslint-disable-line
 
     const image = new Renderer({
         ...params,
         container: 'body',
     });
     image.render();
-
-    const buttonRefresh = document.createElement('input');
-    buttonRefresh.type = 'button';
-    buttonRefresh.value = 'Refresh';
-    buttonRefresh.className = 'refresh-button';
-    buttonRefresh.onclick = () => {
-        image.rerender();
-    };
-    document.body.appendChild(buttonRefresh);
-
-    const buttonStop = document.createElement('input');
-    buttonStop.type = 'button';
-    buttonStop.value = 'Stop';
-    buttonStop.className = 'refresh-button';
-    buttonStop.onclick = () => {
-        image.stop();
-    };
-    document.body.appendChild(buttonStop);
 });
