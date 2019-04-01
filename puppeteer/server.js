@@ -14,8 +14,9 @@ const Stream = require('stream').Transform;
 const EventEmitter = require('events').EventEmitter;
 
 const hostname = '127.0.0.1';
-const port = 5679;
+const port = 5790;
 const watermarkFile = path.resolve(process.cwd(), 'puppeteer/example-pattern.png');
+const renderHost = 'http://127.0.0.1:5789';
 
 const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
     Object.defineProperty(window, '${name}', {
@@ -93,7 +94,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                     const out = `${requestFolder}/out.gif`;
                     const ffmpeg = spawn('ffmpeg', [
                         '-framerate',
-                        '40',
+                        '24',
                         '-i',
                         input,
                         '-final_delay',
@@ -204,8 +205,8 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
             });
 
             const requestParams = querystring.stringify(bodyFields);
-            // console.log(`http://localhost:5678/?${requestParams}`);
-            const response = await page.goto(`http://localhost:5678/?${requestParams}`);
+            // console.log(`${renderHost}/?${requestParams}`);
+            const response = await page.goto(`${renderHost}/?${requestParams}`);
 
             if (response.status() !== 200) {
                 await page.close();
@@ -367,7 +368,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         return;
                     }
 
-                    bodyFields.imageURL = `http://${hostname}:5678/${requestId}/${imageName}`;
+                    bodyFields.imageURL = `${renderHost}/${requestId}/${imageName}`;
 
                     if (filter) {
                         workflow.emit('imageApplyFilter');
@@ -401,7 +402,7 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                     image = `${requestFolder}/${imageName}`;
                     fs.writeFileSync(image, data.read());
 
-                    bodyFields.imageURL = `http://${hostname}:5678/${requestId}/${imageName}`;
+                    bodyFields.imageURL = `${renderHost}/${requestId}/${imageName}`;
 
                     if (filter) {
                         workflow.emit('imageApplyFilter');

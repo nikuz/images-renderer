@@ -4,7 +4,7 @@ const fs = require('fs');
 const url = require('url');
 
 const hostname = '127.0.0.1';
-const port = 5678;
+const port = 5789;
 const lastModified = new Date();
 
 const server = http.createServer((req, res) => {
