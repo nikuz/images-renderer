@@ -16,6 +16,7 @@ const EventEmitter = require('events').EventEmitter;
 const hostname = '127.0.0.1';
 const port = 5790;
 const watermarkFile = path.resolve(process.cwd(), 'puppeteer/example-pattern.png');
+const shadeFile = path.resolve(process.cwd(), 'puppeteer/shade.png');
 const renderHost = 'http://127.0.0.1:5789';
 
 const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
@@ -327,11 +328,12 @@ const windowSet = (page, name, value) => page.evaluateOnNewDocument(`
                         .raise(100, 100)
                         .write(image, resultHandler);
                     break;
-                // case 'shade': // need to implement
-                //     gm(image)
-                //         .extent(100, 100, '+')
-                //         .write(image, resultHandler);
-                //     break;
+                case 'shade': // need to implement
+                    gm(image)
+                        .composite(shadeFile)
+                        .tile()
+                        .write(image, resultHandler);
+                    break;
                 case 'blur':
                     gm(image)
                         .blur(10, 10)
